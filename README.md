@@ -53,7 +53,7 @@ Instead of manually clicking through hundreds of postings to check the "Work Ter
     The browser will open and navigate to the WaterlooWorks login page.
     *   Enter your credentials.
     *   Complete the 2FA (Duo) challenge.
-    *   Navigate to the **Job Search Results** page (where the table of jobs is listed).
+    *   Navigate to the **Job Search Results** page (where the table of jobs is listed) and don't forget to selet "My Program".
 
 3.  **Start Automating:**
     Once you are on the search results page, press **ENTER** in the terminal console.
@@ -73,7 +73,3 @@ Instead of manually clicking through hundreds of postings to check the "Work Ter
     *   `First: 10%`
     *   `1st Work Term: 15%`
 5.  **Scoring**: It sums the percentages for 1st and 2nd work terms. If the score is > 10%, it's a match!
-
-## ⚠️ Disclaimer
-
-This tool is for educational purposes only. Use it responsibly and similarly to how a human would browse (the bot includes random sleep delays to mimic human behavior). Excessive automated requests may flag your account. The author is not responsible for any misuse.

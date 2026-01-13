@@ -4,50 +4,52 @@ import os
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # --- CONFIGURATION & SELECTORS ---
-# User: Update these selectors based on the actual WaterlooWorks DOM structure.
 LOGIN_URL = "https://waterlooworks.uwaterloo.ca/waterloo.htm"
-# Example placeholder selectors - REPLACE THESE with actual Inspect Element values
-JOB_SEARCH_NAV_LINK = "text='Job Search' or text='Hire Waterloo Co-op'" # Adjust based on dashboard text
-JOB_MINE_BUTTON = "text='Hire Waterloo Co-op'" # Usually you click into a specific module
-SEARCH_RESULTS_TABLE_ROWS = "table.searchResults tr" # Simplified guess
-JOB_LINK_SELECTOR = "a.job-title-link"  # Selector to click into a job from the list
-HIRING_HISTORY_TAB = "text='Hiring History'" # Tab text
-CHART_CANVAS_SELECTOR = "canvas" # or "img.chart" - selector for the specific chart element
 
-# Output directory for screenshots
+# Selectors
+JOB_LINK_SELECTOR = "tr a.overflow--ellipsis"
+MODAL_SELECTOR = "div[role='dialog']"
+WORK_TERM_RATINGS_TAB = "text='Work Term Ratings'"
+CHART_HEADER_TEXT = "text='Hires by Student Work Term Number'"
+
+# Try multiple common close button patterns for WaterlooWorks/Orbis
+CLOSE_BUTTON_SELECTOR = "button[aria-label='Close'], .icon-cross, button:has-text('Close'), button:has-text('Cancel')"
+
+# File to save results
+RESULTS_FILE = "friendly_jobs.txt"
 SCREENSHOT_DIR = "chart_screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
-def analyze_chart(image_path):
+def mock_ai_analyze(image_path):
     """
-    Placeholder function to mimic Vision API analysis.
-    Returns: dict with percentages for 'First' and 'Second' work terms.
+    Mock AI function. Returns a random percentage (0-50) representing
+    historical junior hiring rate.
     """
-    print(f"    [Vision] Analyzing {image_path}...")
-    # Simulation: Randomly generate percentages to test the logic
-    # In production, this would call an API like OpenAI GPT-4o or Google Cloud Vision
-    first_term = random.uniform(0, 40)
-    second_term = random.uniform(0, 30)
-    return {
-        "First": first_term,
-        "Second": second_term,
-        "Total_Junior": first_term + second_term
-    }
+    # Simulate processing time
+    time.sleep(0.5)
+    result = random.randint(0, 50)
+    return result
 
-def random_sleep(min_seconds=1.5, max_seconds=4.0):
+def random_sleep(min_seconds=1.0, max_seconds=2.5):
     """Sleep for a random amount of time to mimic human behavior."""
     time.sleep(random.uniform(min_seconds, max_seconds))
 
 def run_junior_hunter():
-    print("🤖 The WaterlooWorks Junior Hunter is initializing...")
+    print("🤖 The WaterlooWorks Junior Hunter is initializing (Pop-Up Poker Mode)...")
+    
+    # Initialize/Clear results file
+    with open(RESULTS_FILE, "w") as f:
+        f.write("--- Junior Friendly Jobs ---\n")
 
     with sync_playwright() as p:
-        # Launch browser with slow_mo to mimic human speed
+        # Launch browser with slow_mo
         browser = p.chromium.launch(headless=False, slow_mo=100)
+        
         context = browser.new_context(
-            viewport={'width': 1280, 'height': 720},
+            viewport={'width': 1600, 'height': 900},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         )
+        
         page = context.new_page()
 
         # 1. Launch & Login Hand-off
@@ -55,158 +57,133 @@ def run_junior_hunter():
         page.goto(LOGIN_URL)
         
         print("\n" + "="*60)
-        print("🛑 ACTION REQUIRED: Please log in repeatedly manually.")
-        print("   Complete 2FA (Duo Push) if requested.")
-        print("   Navigate SPECIFICALLY to the 'Search Results' page where the list of jobs is visible.")
+        print("🛑 ACTION REQUIRED: Please log in manually.")
+        print("   1. Complete 2FA.")
+        print("   2. Navigate to the 'Job Search' results page.")
         input("👉 Press ENTER in this console once you are on the Job Search Results page...")
         print("="*60 + "\n")
         
         print("bot: Taking control...")
 
-        # 2. Iterate through jobs
-        # NOTE: In complex lists, it's safer to grab all URLs first if possible, 
-        # or handle the "stale element" issue by querying index by index.
-        # Here we will try to gather all job links first to avoid stale elements when going back.
-        
-        print("bot: Scanning for job links...")
-        
-        # User defined generic logic for finding job links. 
-        # Ideally, look for specific table rows or card titles.
-        # This is a generic robust locator strategy:
+        # 2. Main Loop
         try:
-            # Wait for at least one job link to be visible to ensure page loaded
-            # Adjust this selector to match the actual job title links
-            # Generic guess: often <a> tags inside a table or list
-            # Wait a bit for dynamic content
-            page.wait_for_timeout(2000) 
+            # Wait for table to ensure we are ready
+            page.wait_for_selector(JOB_LINK_SELECTOR, timeout=10000)
             
-            # Using a generic strategy for the user to refine: grab all 'a' tags that look like job titles
-            # For now, we assume the user will provide a specific selector. 
-            # We'll mock finding elements if the selector isn't real.
+            # Count total jobs
+            total_jobs_found = page.locator(JOB_LINK_SELECTOR).count()
+            print(f"bot: Found {total_jobs_found} total jobs on page.")
             
-            # CRITICAL: Since we don't know the real selector, we ask the user to input/check it.
-            # providing a generic "get all links" is dangerous.
-            
-            # Use specific locator (placeholder)
-            job_links = page.locator(JOB_LINK_SELECTOR).all()
-            
-            # If no links found with specific selector, try a fallback for demo purposes
-            if not job_links:
-                print(f"⚠️  No jobs found with selector '{JOB_LINK_SELECTOR}'.")
-                print("    (Please update the JOB_LINK_SELECTOR constant in the script)")
-                # For safety, we stop here rather than clicking random things
-                # return 
-                
-                # DEMO OVERRIDE: If this was a real run, we return. 
-                # For now, let's pretend we found some for flow demonstration if scraping fails.
-                pass 
+            # Limit to first 5 for testing per requirements
+            limit = min(5, total_jobs_found)
+            print(f"bot: processing first {limit} jobs...")
 
-            print(f"bot: Found {len(job_links)} potential jobs.")
-            
-            junior_friendly_jobs = []
-
-            # We loop by index to handle re-querying if the DOM refreshes
-            count = len(job_links)
-            
-            # Safety cap for testing
-            if count == 0:
-                 print("    (No jobs found to iterate. Check your selectors.)")
-            
-            for i in range(count):
-                print(f"\n--- Processing Job {i+1}/{count} ---")
-                
-                # Re-query elements to avoid StaleElementReference errors (common in React/Angular apps)
-                # We need to ensure we are on the results page.
-                # Ideally, check for a "Results" element.
-                
-                current_job_links = page.locator(JOB_LINK_SELECTOR).all()
-                if i >= len(current_job_links):
-                    print("⚠️  Index out of bounds - list changed?")
-                    break
-                    
-                job_element = current_job_links[i]
-                
-                # Get text for logging
-                try:
-                    job_title = job_element.inner_text().strip()
-                except:
-                    job_title = f"Job #{i+1}"
-                
-                print(f"bot: Clicking '{job_title}'...")
+            for i in range(limit):
+                print(f"\n--- Processing Job {i+1} of {limit} ---")
                 
                 try:
-                    # 3. Inspect Job
-                    # Ctrl+Click (new tab) is often safer than navigation for list handling,
-                    # but "go back" mimics human behavior better for detection avoidance.
-                    job_element.click()
+                    # Re-acquire locators inside loop for safety
+                    current_link = page.locator(JOB_LINK_SELECTOR).nth(i)
                     
-                    # Wait for job details to load
-                    page.wait_for_load_state("domcontentloaded")
-                    random_sleep(2, 4) # Reading time
+                    # Log Job Title
+                    try:
+                        job_title = current_link.inner_text().strip()
+                    except:
+                        job_title = f"Job #{i+1}"
                     
-                    # 4. Find Hiring History
-                    # Using get_by_role or text is robust
-                    hiring_tab = page.get_by_text("Hiring History", exact=False)
+                    print(f"    ➡️  Clicking: {job_title}")
                     
-                    if hiring_tab.count() > 0 and hiring_tab.is_visible():
-                        hiring_tab.click()
-                        random_sleep(1, 2)
+                    # CLICK to open Modal
+                    current_link.click()
+                    
+                    # Wait for Modal
+                    try:
+                        page.wait_for_selector(MODAL_SELECTOR, state="visible", timeout=5000)
+                        print("    📂 Modal opened.")
+                    except PlaywrightTimeoutError:
+                        print("    ⚠️ Modal did not appear. Skipping...")
+                        continue
+
+                    # Inside Modal: Navigate to Ratings
+                    # Scope locators to the modal if possible, or page is fine if modal covers it
+                    # Using modal_element.locator(...) is safer
+                    modal = page.locator(MODAL_SELECTOR).last # Use last in case of nested dialogs
+                    
+                    ratings_tab = modal.locator(WORK_TERM_RATINGS_TAB)
+                    
+                    if ratings_tab.is_visible():
+                        ratings_tab.click()
+                        random_sleep(1, 1.5)
                         
-                        # 5. Vision / Screenshot
-                        # Locate the chart. 
-                        # This might need a frame locator if it's in an iframe.
-                        chart = page.locator(CHART_CANVAS_SELECTOR).first
+                        # Find Chart
+                        header = modal.locator(CHART_HEADER_TEXT)
                         
-                        if chart.count() > 0:
-                            screenshot_path = os.path.join(SCREENSHOT_DIR, f"job_{i}_{int(time.time())}.png")
-                            chart.screenshot(path=screenshot_path)
-                            print(f"    📸 Chart captured: {screenshot_path}")
+                        try:
+                            header.wait_for(state="visible", timeout=5000)
+                            header.scroll_into_view_if_needed()
+                            random_sleep(0.5, 1) # Wait for animation
                             
-                            # 6. Analyze
-                            data = analyze_chart(screenshot_path)
-                            total_score = data["Total_Junior"]
-                            print(f"    📊 Analysis: 1st={data['First']:.1f}%, 2nd={data['Second']:.1f}% (Total: {total_score:.1f}%)")
+                            # Screenshot
+                            screenshot_path = os.path.join(SCREENSHOT_DIR, f"temp_job_{i}.png")
+                            # We allow screenshotting the whole page as modals can be tricky to screenshot individually
+                            page.screenshot(path=screenshot_path)
                             
-                            # 7. Filter
-                            if total_score > 30.0: # Threshold
-                                print("    ✅ JUNIOR FRIENDLY! Adding to list.")
-                                junior_friendly_jobs.append({
-                                    "title": job_title,
-                                    "score": total_score,
-                                    "url": page.url
-                                })
+                            # Mock Analysis
+                            score = mock_ai_analyze(screenshot_path)
+                            print(f"    📊 Analysis Score: {score}%")
+                            
+                            # Filter
+                            if score > 10:
+                                print(f"    ✅ JUNIOR FRIENDLY! Saving to {RESULTS_FILE}")
+                                with open(RESULTS_FILE, "a") as f:
+                                    f.write(f"{job_title} | Score: {score}%\n")
                             else:
-                                print("    ❌ Not junior friendly.")
-                        else:
-                            print("    ⚠️  Could not find chart element (canvas/img).")
+                                print(f"    ❌ Not friendly (Score: {score}%)")
+                                
+                        except PlaywrightTimeoutError:
+                            print("    ⚠️ Chart header not found in modal.")
                     else:
-                        print("    ⚠️  'Hiring History' tab not found.")
+                        print("    ⚠️ 'Work Term Ratings' tab not found in modal.")
 
                 except Exception as e:
-                    print(f"    🔥 Error processing job: {e}")
+                    print(f"    🔥 Error on Job {i+1}: {e}")
                 
                 finally:
-                    # 8. Return to list
-                    # Go back to search results
-                    print("bot: Returning to search results...")
-                    page.go_back()
-                    page.wait_for_load_state("domcontentloaded")
-                    random_sleep(1, 2) # Wait before next action
-            
-            # Report
-            print("\n" + "="*60)
-            print("🎉 COMPLETED")
-            print(f"Found {len(junior_friendly_jobs)} junior-friendly jobs:")
-            for job in junior_friendly_jobs:
-                print(f"- {job['title']} (Score: {job['score']:.1f}%)")
-            print("="*60)
+                    # CRITICAL: Close Modal
+                    print("    ✖️  Closing modal...")
+                    
+                    try:
+                        # Try finding the close button
+                        close_btn = page.locator(CLOSE_BUTTON_SELECTOR).last 
+                        # Use .last because sometimes there are hidden ones
+                        
+                        if close_btn.is_visible():
+                            close_btn.click()
+                        else:
+                            # Fallback: ESC key
+                            print("    ⚠️ Close button not found, pressing ESC.")
+                            page.keyboard.press("Escape")
+                        
+                        # Wait for modal to disappear
+                        page.locator(MODAL_SELECTOR).wait_for(state="hidden", timeout=5000)
+                        
+                    except Exception as close_error:
+                        print(f"    🔥 Failed to close modal cleanly: {close_error}")
+                        # Last ditch effort to ensure we can proceed
+                        page.keyboard.press("Escape")
+                        random_sleep(1, 2)
+                    
+                    # Specific pause between jobs
+                    random_sleep(1.0, 2.0)
 
-        except KeyboardInterrupt:
-            print("\n🛑 Bot stopped by user.")
-        except Exception as e:
-            print(f"\n🔥 Fatal Error: {e}")
+        except Exception as main_e:
+            print(f"\n🔥 Fatal Error: {main_e}")
 
-        # Keep browser open briefly to see results if needed
+        print("\n" + "="*60)
+        print("🎉 Batch complete.")
+        print(f"Check {RESULTS_FILE} for results.")
+        print("="*60)
+        
         time.sleep(2)
         browser.close()
 

@@ -58,7 +58,7 @@ def parse_modal_text(text):
     print(f"      > Total Junior Score: {total}%")
     return total, found_first, found_second
 
-def scan_current_page(page):
+def scan_current_page(page, duration_pref="any"):
     """Scans all jobs on the current page."""
     try:
         # Wait for table to ensure we are ready
@@ -98,6 +98,55 @@ def scan_current_page(page):
                     modal = page.locator(MODAL_SELECTOR).last
                     print("    📂 Modal opened.")
 
+                    # --- CHECK DURATION (Overview Tab) ---
+                    # Targeted extraction based on DOM structure
+                    job_duration = "Unknown"
+                    
+                    # Locate the specific row containing "Work Term Duration:"
+                    duration_cnt = modal.locator(".tag__key-value-list", has_text="Work Term Duration:")
+                    
+                    if duration_cnt.count() > 0:
+                        # Get text, e.g., "Work Term Duration:\n \n 4 month work term"
+                        raw_text = duration_cnt.first.inner_text()
+                        
+                        # Clean: collapse all whitespace/newlines into single spaces
+                        clean_text = re.sub(r'\s+', ' ', raw_text).lower()
+                        
+                        # Normalize
+                        if "8" in clean_text and "month" in clean_text:
+                            job_duration = "8 month"
+                        if "4" in clean_text and "month" in clean_text:
+                            if job_duration == "8 month":
+                                job_duration = "4-8 month" # found both
+                            else:
+                                job_duration = "4 month"
+                        if "flexible" in clean_text:
+                             job_duration = "Flexible"
+                             
+                        print(f"    ⏳ Detected Duration: {clean_text.replace('work term duration:', '').strip()} (Normalized: {job_duration})")
+                    else:
+                        print("    ⚠️ Could not detect duration field (assuming safe).")
+
+                    # FILTER LOGIC
+                    if duration_pref != "any":
+                        # If pref is '4', we reject pure '8'
+                        # If pref is '8', we reject pure '4'
+                        # We accept '4-8', 'flexible', or unknown (conservative) if it might match
+                        
+                        reject = False
+                        if duration_pref == "4":
+                            if job_duration == "8 month": 
+                                reject = True
+                        elif duration_pref == "8":
+                            if job_duration == "4 month":
+                                reject = True
+                        
+                        if reject:
+                            print(f"    🚫 Skipping: Duration mismatch (Wanted {duration_pref}, got {job_duration})")
+                            # Skip to finally block to close modal
+                            raise Exception("Duration Mismatch")
+
+
                     # Tab Switching
                     ratings_tab = modal.get_by_text(WORK_TERM_RATINGS_TEXT, exact=False)
                     ratings_tab.wait_for(state="visible", timeout=3000)
@@ -130,7 +179,7 @@ def scan_current_page(page):
                         if score > 10:
                             print("    ✅ JUNIOR FRIENDLY! Saving...")
                             with open(RESULTS_FILE, "a") as f:
-                                f.write(f"{job_title} | Score: {score}% | First: {first}% | Second: {second}%\n")
+                                f.write(f"{job_title} | Score: {score}% | First: {first}% | Second: {second}% | Duration: {job_duration}\n")
                         else:
                             print(f"    ❌ Score too low ({score}%)")
 
@@ -199,9 +248,17 @@ def run_junior_hunter():
         
         print("bot: Taking control...")
 
+        # Ask for duration pref
+        print("\n" + "="*40)
+        duration_pref = input("Filter by duration? (Enter '4', '8', or 'any'): ").strip().lower()
+        if duration_pref not in ['4', '8']:
+            duration_pref = "any"
+        print(f"bot: Duration Filter set to '{duration_pref}'")
+        print("="*40 + "\n")
+
         # 2. Main Loop - Batch Processing
         while True:
-            scan_current_page(page)
+            scan_current_page(page, duration_pref)
 
             print("\n" + "="*60)
             print("🎉 Batch complete! Options:")

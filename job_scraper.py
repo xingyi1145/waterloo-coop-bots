@@ -1,4 +1,73 @@
-from playwright.sync_api import Page
+from playwright.sync_api import Page, Locator
+import re
+
+def scrape_work_term_duration(modal: Locator) -> str:
+    """
+    Robustly extracts the Work Term Duration from the job modal.
+    Strategy:
+      1. Use text-based locator for "Work Term Duration:" label.
+      2. Traverse to parent container.
+      3. Extract and normalize text.
+      4. Fallback to global text regex if specific locator fails.
+    """
+    print("    ⏳ Checking Duration...")
+    job_duration = "Unknown"
+    
+    try:
+        # Strategy 1: Specific Locator by Text Label
+        # "Work Term Duration:" is the label. We want the container.
+        # We use .first because sometimes text matches multiple
+        label_el = modal.get_by_text("Work Term Duration:", exact=False).first
+        
+        raw_text = ""
+        # Wait briefly for it to be visible
+        try:
+            label_el.wait_for(state="visible", timeout=2000)
+            # Traverse up to the row/container (usually the parent)
+            container = label_el.locator("..") 
+            raw_text = container.inner_text()
+        except:
+             # Locator strategy failed/timed out
+             pass
+            
+        if not raw_text:
+            # Strategy 2: Fallback to Regex on whole modal text
+             print("      ⚠️ Label locator failed. Attempting global regex fallback...")
+             try:
+                 full_text = modal.inner_text()
+                 # Look for pattern generally
+                 match = re.search(r"Work Term Duration:?\s*(.+)", full_text, re.IGNORECASE)
+                 if match:
+                     raw_text = match.group(0)
+                 else:
+                     clean_dump = full_text[:100].replace('\n', ' ')
+                     print(f"      ⚠️ Could not detect duration. Dump: {clean_dump}...")
+                     return "Unknown"
+             except Exception as e:
+                 print(f"      ⚠️ Fallback failed: {e}")
+                 return "Unknown"
+
+        # --- Normalization Logic ---
+        # Clean: collapse all whitespace/newlines into single spaces
+        clean_text = re.sub(r'\s+', ' ', raw_text).lower()
+
+        # Normalize
+        if "8" in clean_text and "month" in clean_text:
+            job_duration = "8 month"
+        if "4" in clean_text and "month" in clean_text:
+            if job_duration == "8 month":
+                job_duration = "4-8 month" # found both
+            else:
+                job_duration = "4 month"
+        if "flexible" in clean_text:
+                job_duration = "Flexible"
+                
+        print(f"      => Detected: {clean_text.replace('work term duration:', '').strip()} (Normalized: {job_duration})")
+        return job_duration
+
+    except Exception as e:
+        print(f"      ❌ Error checking duration: {e}")
+        return "Unknown"
 
 def scrape_job_description(page: Page) -> str:
     """

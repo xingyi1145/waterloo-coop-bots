@@ -2,6 +2,7 @@ import time
 import random
 import os
 import re
+import job_scraper
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # --- CONFIGURATION ---
@@ -99,33 +100,7 @@ def scan_current_page(page, duration_pref="any"):
                     print("    📂 Modal opened.")
 
                     # --- CHECK DURATION (Overview Tab) ---
-                    # Targeted extraction based on DOM structure
-                    job_duration = "Unknown"
-                    
-                    # Locate the specific row containing "Work Term Duration:"
-                    duration_cnt = modal.locator(".tag__key-value-list", has_text="Work Term Duration:")
-                    
-                    if duration_cnt.count() > 0:
-                        # Get text, e.g., "Work Term Duration:\n \n 4 month work term"
-                        raw_text = duration_cnt.first.inner_text()
-                        
-                        # Clean: collapse all whitespace/newlines into single spaces
-                        clean_text = re.sub(r'\s+', ' ', raw_text).lower()
-                        
-                        # Normalize
-                        if "8" in clean_text and "month" in clean_text:
-                            job_duration = "8 month"
-                        if "4" in clean_text and "month" in clean_text:
-                            if job_duration == "8 month":
-                                job_duration = "4-8 month" # found both
-                            else:
-                                job_duration = "4 month"
-                        if "flexible" in clean_text:
-                             job_duration = "Flexible"
-                             
-                        print(f"    ⏳ Detected Duration: {clean_text.replace('work term duration:', '').strip()} (Normalized: {job_duration})")
-                    else:
-                        print("    ⚠️ Could not detect duration field (assuming safe).")
+                    job_duration = job_scraper.scrape_work_term_duration(modal)
 
                     # FILTER LOGIC
                     if duration_pref != "any":

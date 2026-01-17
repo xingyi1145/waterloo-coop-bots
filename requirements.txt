@@ -1,1 +1,4 @@
 playwright
+markitdown
+openai
+pydantic

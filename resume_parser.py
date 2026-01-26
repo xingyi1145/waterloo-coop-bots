@@ -2,7 +2,8 @@ import os
 import sys
 import json
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, BeforeValidator
+from typing_extensions import Annotated
 from openai import OpenAI
 from markitdown import MarkItDown
 
@@ -55,11 +56,49 @@ def parse_resume_to_json(markdown_text: str, openai_api_key: str) -> dict:
     """
     Uses OpenAI to parse markdown resume text into a structured JSON dictionary.
     """
-    client = OpenAI(api_key=openai_api_key)
+    # Use OpenRouter config if using that key
+    base_url = "https://openrouter.ai/api/v1"
+    
+    client = OpenAI(
+        api_key=openai_api_key,
+        base_url=base_url
+    )
 
     prompt_template = f"""
-Parse this resume into JSON. Output ONLY the JSON object, no other text.
-Map content to standard sections.
+You are a Resume Parser. Convert the resume text below into the following JSON structure exactly. 
+Do not change key names.
+
+Expected JSON Structure:
+{{
+  "personalInfo": {{
+    "name": "Full Name",
+    "email": "email@example.com",
+    "phone": "123-456-7890",
+    "location": "City, Country",
+    "linkedin": "url or empty",
+    "github": "url or empty",
+    "website": "url or empty"
+  }},
+  "summary": "Brief professional summary",
+  "workExperience": [
+    {{
+      "title": "Job Title",
+      "company": "Company Name",
+      "years": "YYYY - YYYY",
+      "location": "City, Country",
+      "description": ["bullet point 1", "bullet point 2"]
+    }}
+  ],
+  "education": [
+    {{
+       "institution": "University Name",
+       "degree": "Degree Name",
+       "years": "YYYY - YYYY"
+    }}
+  ],
+  "skills": ["skill1", "skill2", "skill3"]
+}}
+
 Rules:
 - Use "" for missing text fields, [] for missing arrays.
 - Format years as "YYYY - YYYY" or "YYYY - Present".
@@ -70,18 +109,37 @@ Resume to parse:
 """
 
     response = client.chat.completions.create(
-        model="gpt-4o",  # Using a capable model for JSON extraction
+        model="tngtech/deepseek-r1t2-chimera:free", 
         messages=[
-            {"role": "system", "content": "You are a helpful assistant that extracts structured data from resumes."},
+           # {"role": "system", "content": "You are a helpful assistant that extracts structured data from resumes."}, # DeepSeek R1 prefers simpler prompts sometimes
             {"role": "user", "content": prompt_template}
         ],
-        response_format={"type": "json_object"}
+        extra_headers={
+            "HTTP-Referer": "https://github.com/xingy/waterloo_coop_bot",
+            "X-Title": "Waterloo Coop Bot",
+        },
+        # response_format={"type": "json_object"} # Removed for compatibility
     )
 
     content = response.choices[0].message.content
     
+    # Simple cleanup for markdown json blocks
+    if content.startswith("```"):
+        import re
+        content = re.sub(r"^```(?:json)?\n", "", content)
+        content = re.sub(r"\n```$", "", content)
+    
     # Load raw JSON
-    raw_json = json.loads(content)
+    try:
+        raw_json = json.loads(content)
+    except json.JSONDecodeError:
+         # Fallback search
+        import re
+        match = re.search(r"(\{.*\})", content, re.DOTALL)
+        if match:
+             raw_json = json.loads(match.group(1))
+        else:
+            raise ValueError("Could not parse JSON from LLM response")
     
     # Validate with Pydantic
     resume_data = ResumeData.model_validate(raw_json)

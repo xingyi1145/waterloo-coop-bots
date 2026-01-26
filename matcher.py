@@ -3,9 +3,19 @@ import json
 import re
 from openai import AsyncOpenAI
 
+# --- CONFIGURATION ---
+# OpenRouter API Key
+API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+BASE_URL = "https://openrouter.ai/api/v1"
+MODEL_NAME = "tngtech/deepseek-r1t2-chimera:free"
+SITE_URL = "https://github.com/xingy/waterloo_coop_bot" 
+SITE_NAME = "Waterloo Coop Bot"
+
 # Initialize Async Client
-# Note: Ensure OPENAI_API_KEY is set in environment variables
-client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = AsyncOpenAI(
+    api_key=API_KEY,
+    base_url=BASE_URL, 
+)
 
 EXTRACT_KEYWORDS_PROMPT = """
 Extract job requirements as JSON. Output ONLY the JSON object.
@@ -67,12 +77,14 @@ async def extract_job_keywords(job_text: str) -> dict:
     
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": "You are a helpful assistant that extracts structured data from job descriptions."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"}
+            extra_headers={
+                "HTTP-Referer": SITE_URL,
+                "X-Title": SITE_NAME,
+            },
         )
         content = response.choices[0].message.content
         return clean_json_response(content)
@@ -108,12 +120,14 @@ async def analyze_match(resume_json: dict, job_text: str) -> dict:
     
     try:
         response = await client.chat.completions.create(
-            model="gpt-4o",
+            model=MODEL_NAME,
             messages=[
-                {"role": "system", "content": "You are an expert technical recruiter."},
                 {"role": "user", "content": prompt}
             ],
-            response_format={"type": "json_object"}
+            extra_headers={
+                "HTTP-Referer": SITE_URL,
+                "X-Title": SITE_NAME,
+            },
         )
         content = response.choices[0].message.content
         result = clean_json_response(content)

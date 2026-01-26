@@ -132,24 +132,28 @@ def scan_current_page(page, duration_pref="any", resume_data=None):
                         print("    🧠 Analyzing Fit with Resume...")
                         try:
                             # 1. Scrape Description (Handles switching to Info tab)
-                            job_desc = job_scraper.scrape_job_description(page)
+                            # Pass modal, not page, for better scoping
+                            job_desc = job_scraper.scrape_job_description(modal)
                             
-                            # 2. Run LLM Match (Async wrapper)
-                            # We use asyncio.run because we are in a sync function
-                            match_result = asyncio.run(matcher.analyze_match(resume_data, job_desc))
-                            
-                            score = match_result.get("match_score", 0)
-                            reasoning = match_result.get("reasoning", "No reasoning provided")
-                            
-                            print(f"      => Match Score: {score}/100")
-                            print(f"      => Reasoning: {reasoning}")
-                            
-                            match_details = f"Match: {score}% | {reasoning}"
-                            
-                            # Filter threshold (e.g., 60%)
-                            if score < 50:
-                                print(f"    🚫 Skipping: Low Resume Match Score ({score}%)")
-                                raise Exception("Low Match Score")
+                            # 2. Run LLM Match (Sync wrapper)
+                            # Now directly calling sync function
+                            if job_desc:
+                                match_result = matcher.analyze_match(resume_data, job_desc)
+                                
+                                score = match_result.get("match_score", 0)
+                                reasoning = match_result.get("reasoning", "No reasoning provided")
+                                
+                                print(f"      => Match Score: {score}/100")
+                                print(f"      => Reasoning: {reasoning}")
+                                
+                                match_details = f"Match: {score}% | {reasoning}"
+                                
+                                # Filter threshold (e.g., 60%)
+                                if score < 50:
+                                    print(f"    🚫 Skipping: Low Resume Match Score ({score}%)")
+                                    raise Exception("Low Match Score")
+                            else:
+                                print("      ⚠️ Skipping match: No job description extracted.")
                                 
                         except Exception as e:
                             print(f"    ⚠️ Resume matching failed: {e}")
@@ -158,13 +162,13 @@ def scan_current_page(page, duration_pref="any", resume_data=None):
                                 
                     # Tab Switching (to Ratings)
                     # Note: We might be on 'Job Posting Information' tab now, so we click Ratings tab.
-                    ratings_tab = modal.get_by_text(WORK_TERM_RATINGS_TEXT, exact=False)
+                    ratings_tab = modal.get_by_text(WORK_TERM_RATINGS_TEXT, exact=False).first
                     ratings_tab.wait_for(state="visible", timeout=3000)
                     ratings_tab.click()
                     random_sleep(0.8, 1.5)
 
                     # Chart Finding
-                    header = modal.get_by_text(CHART_HEADER_TEXT, exact=False)
+                    header = modal.get_by_text(CHART_HEADER_TEXT, exact=False).first
                     header.wait_for(state="visible", timeout=5000)
                     header.scroll_into_view_if_needed()
                     

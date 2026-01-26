@@ -69,58 +69,74 @@ def scrape_work_term_duration(modal: Locator) -> str:
         print(f"      ❌ Error checking duration: {e}")
         return "Unknown"
 
-def scrape_job_description(page: Page) -> str:
+def scrape_job_description(modal: Locator) -> str:
     """
     Extracts the full text of the "Job Description" from the currently open modal.
     Logic:
-      1. Switch to "Job Posting Information" tab.
-      2. Locate specific headers like "Required qualifications" or "Skills".
-      3. Extract text from the container.
+      1. Switch to "Job Posting Information" tab inside the modal.
+      2. Locate active tab pane.
+      3. Fallback to full modal text if specific containers aren't found.
     """
     print("    📄 Scraping Job Description...")
     try:
         # 1. Verify/Click "Job Posting Information" tab
-        # We target the tab link specifically. In many Bootstrap modals, it's an <a> or <li>
-        # Using a broad text match to catch "Job Posting Information"
-        info_tab = page.locator("a", has_text="Job Posting Information").last
+        # Use get_by_text for robustness (it might be a span, div, or a tag)
+        info_tab = modal.locator(".nav-tabs").get_by_text("Job Posting Information", exact=False).first
         
-        if info_tab.is_visible():
-            # Check if it's already active (optimization)
-            # Parent <li> usuall has class 'active'
-            parent = info_tab.locator("xpath=..")
-            class_attr = parent.get_attribute("class") or ""
-            
-            if "active" not in class_attr.lower():
-                print("      -> Switching to 'Job Posting Information' tab...")
+        if info_tab.count() > 0 and info_tab.is_visible():
+            # Check if it's likely active (checking parent or self for 'active')
+            # This is heuristic; if checking fails, we just click.
+            try:
+                # Often the <li> is active, info_tab is the <a> or text inside
+                parent_li = info_tab.locator("xpath=./ancestor::li").first
+                class_attr = parent_li.get_attribute("class") or ""
+                if "active" not in class_attr.lower():
+                    print("      -> Switching to 'Job Posting Information' tab...")
+                    info_tab.click()
+                    pass
+            except:
+                # If structure is weird, just click the text
                 info_tab.click()
-                # Wait briefly for content render
-                page.wait_for_timeout(500)
         else:
-            print("      ⚠️ 'Job Posting Information' tab not found.")
+            # It's possible we are already there or the tab UI is different. 
+            # We don't abort, we just try to find content.
+            pass
 
         # 2. Identify the content container
-        # We look for the active tab content
-        # Often div.tab-pane.active
-        active_pane = page.locator(".tab-pane.active").last
+        # Try finding the tab-content container directly, often it wraps the panes
+        # If we can't find a specific ".active" pane, we grab the whole tab-content
+        content_locators = [
+            ".tab-pane.active",          # Standard Bootstrap
+            ".tab-content .active",      # Variation
+            ".tab-content",              # Fallback to all tab content
+            "div[id*='postingDiv']"      # Orbis specific often
+        ]
+
+        active_pane = None
+        for sel in content_locators:
+            loc = modal.locator(sel).first
+            if loc.count() > 0 and loc.is_visible():
+                active_pane = loc
+                break
         
-        if not active_pane.is_visible():
-            print("      ⚠️ Active tab pane not visible.")
-            return ""
-            
-        # 3. Validation / Specific Targeting
-        # The prompt asked to try locating "Required qualifications" or "Skills"
-        # We can check if these exist to verify we are in the right place, 
-        # but generally we want the *entire* text of the description, not just that section.
-        # So we grab the whole active pane.
+        if active_pane:
+            text = active_pane.inner_text()
+            # If text is very short, it might be the wrong container.
+            if len(text) > 50:
+                return text
         
-        description_text = active_pane.inner_text()
+        # 3. Fallback: If we verified duration exists, the text IS there.
+        # It might not be in .tab-pane.active. 
+        # We'll just grab the Main Content of the modal.
+        print("      ⚠️ Standard tab structure not detected. Scraped full modal text (safe fallback).")
+        full_text = modal.inner_text()
         
-        # Minimal validation - check if it looks empty
-        if len(description_text.strip()) < 10:
-             print("      ⚠️ Scraped text seems too short.")
-        
-        return description_text
+        return full_text
 
     except Exception as e:
         print(f"      ❌ Error during description scraping: {e}")
-        return ""
+        # Last resort fallback
+        try:
+             return modal.inner_text()
+        except:
+             return ""

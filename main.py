@@ -2,7 +2,12 @@ import time
 import random
 import os
 import re
+import asyncio
+from dotenv import load_dotenv
+
 import job_scraper
+import resume_parser
+import matcher
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 
 # --- CONFIGURATION ---
@@ -59,7 +64,7 @@ def parse_modal_text(text):
     print(f"      > Total Junior Score: {total}%")
     return total, found_first, found_second
 
-def scan_current_page(page, duration_pref="any"):
+def scan_current_page(page, duration_pref="any", resume_data=None):
     """Scans all jobs on the current page."""
     try:
         # Wait for table to ensure we are ready
@@ -121,15 +126,49 @@ def scan_current_page(page, duration_pref="any"):
                             # Skip to finally block to close modal
                             raise Exception("Duration Mismatch")
 
-
-                    # Tab Switching
-                    ratings_tab = modal.get_by_text(WORK_TERM_RATINGS_TEXT, exact=False)
+                    # --- RESUME MATCHING LOGIC ---
+                    match_details = "N/A"
+                    if resume_data:
+                        print("    🧠 Analyzing Fit with Resume...")
+                        try:
+                            # 1. Scrape Description (Handles switching to Info tab)
+                            # Pass modal, not page, for better scoping
+                            job_desc = job_scraper.scrape_job_description(modal)
+                            
+                            # 2. Run LLM Match (Sync wrapper)
+                            # Now directly calling sync function
+                            if job_desc:
+                                match_result = matcher.analyze_match(resume_data, job_desc)
+                                
+                                score = match_result.get("match_score", 0)
+                                reasoning = match_result.get("reasoning", "No reasoning provided")
+                                
+                                print(f"      => Match Score: {score}/100")
+                                print(f"      => Reasoning: {reasoning}")
+                                
+                                match_details = f"Match: {score}% | {reasoning}"
+                                
+                                # Filter threshold (e.g., 60%)
+                                if score < 50:
+                                    print(f"    🚫 Skipping: Low Resume Match Score ({score}%)")
+                                    raise Exception("Low Match Score")
+                            else:
+                                print("      ⚠️ Skipping match: No job description extracted.")
+                                
+                        except Exception as e:
+                            print(f"    ⚠️ Resume matching failed: {e}")
+                            if str(e) == "Low Match Score":
+                                raise e # Propagate the skip
+                                
+                    # Tab Switching (to Ratings)
+                    # Note: We might be on 'Job Posting Information' tab now, so we click Ratings tab.
+                    ratings_tab = modal.get_by_text(WORK_TERM_RATINGS_TEXT, exact=False).first
                     ratings_tab.wait_for(state="visible", timeout=3000)
                     ratings_tab.click()
                     random_sleep(0.8, 1.5)
 
                     # Chart Finding
-                    header = modal.get_by_text(CHART_HEADER_TEXT, exact=False)
+                    header = modal.get_by_text(CHART_HEADER_TEXT, exact=False).first
                     header.wait_for(state="visible", timeout=5000)
                     header.scroll_into_view_if_needed()
                     
@@ -154,7 +193,11 @@ def scan_current_page(page, duration_pref="any"):
                         if score > 10:
                             print("    ✅ JUNIOR FRIENDLY! Saving...")
                             with open(RESULTS_FILE, "a") as f:
-                                f.write(f"{job_title} | Score: {score}% | First: {first}% | Second: {second}% | Duration: {job_duration}\n")
+                                # Include match details if available
+                                output_line = f"{job_title} | Score: {score}% | First: {first}% | Second: {second}% | Duration: {job_duration}"
+                                if match_details != "N/A":
+                                    output_line += f" | {match_details}"
+                                f.write(output_line + "\n")
                         else:
                             print(f"    ❌ Score too low ({score}%)")
 
@@ -195,6 +238,31 @@ def scan_current_page(page, duration_pref="any"):
 def run_junior_hunter():
     print("🤖 The WaterlooWorks Junior Hunter is initializing (DOM Edition)...")
     
+    # Load Environment Variables
+    load_dotenv()
+    
+    # Resume Setup
+    resume_path = input("Enter path to resume (PDF/DOCX) for matching (or press Enter to skip): ").strip()
+    resume_data = None
+    if resume_path:
+        if os.path.exists(resume_path):
+            print(f"📄 Parsing resume: {resume_path}...")
+            try:
+                # We need markdown text first
+                md_text = resume_parser.convert_to_markdown(resume_path)
+                # Ensure we have an API key for the parser
+                api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+                if not api_key:
+                    print("⚠️  Warning: No API Key found in .env. Skipping resume matching.")
+                else:
+                    resume_data_dict = resume_parser.parse_resume_to_json(md_text, api_key)
+                    resume_data = resume_data_dict
+                    print("✅ Resume parsed successfully!")
+            except Exception as e:
+                print(f"❌ Failed to parse resume: {e}")
+        else:
+            print("⚠️  File not found. Skipping resume matching.")
+
     # Clear previous results
     with open(RESULTS_FILE, "a") as f:
         f.write(f"\n--- Run Started: {time.ctime()} ---\n")
@@ -233,7 +301,7 @@ def run_junior_hunter():
 
         # 2. Main Loop - Batch Processing
         while True:
-            scan_current_page(page, duration_pref)
+            scan_current_page(page, duration_pref, resume_data)
 
             print("\n" + "="*60)
             print("🎉 Batch complete! Options:")
